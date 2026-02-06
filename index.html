@@ -150,12 +150,7 @@
                 <button id="prevQ" class="px-3 py-1 bg-gray-500 text-white rounded">Anterior</button>
                 <button id="nextQ" class="px-3 py-1 bg-indigo-600 text-white rounded">Siguiente</button>
                 <button id="showAll" class="px-3 py-1 bg-gray-600 text-white rounded">Mostrar preguntas (JSON)</button>
-                <select id="quizTopic" class="rounded border px-2">
-                    <option value="all">Todos los bloques</option>
-                    <option value="endomembrana">1) Endomembrana</option>
-                    <option value="estructuras">2) Estructuras y Procesos</option>
-                    <option value="mito">3) Mitocondrias y Metabolismo</option>
-                </select>
+                <select id="quizTopic" class="rounded border px-2"></select>
             </div>
 
             <div id="quizArea">
@@ -175,6 +170,14 @@
                 <textarea id="questionsJSON" style="width:100%;height:200px" class="mt-2 border rounded p-2 font-mono text-sm"></textarea>
                 <div class="mt-2">
                     <button id="loadQuestions" class="px-3 py-1 bg-green-600 text-white rounded">Cargar preguntas desde JSON</button>
+                </div>
+            </details>
+            <details class="mt-4">
+                <summary class="cursor-pointer">Ver/Editar bloques del quiz (JSON)</summary>
+                <textarea id="quizTopicsJSON" style="width:100%;height:160px" class="mt-2 border rounded p-2 font-mono text-sm"></textarea>
+                <div class="mt-2">
+                    <button id="loadQuizTopics" class="px-3 py-1 bg-green-600 text-white rounded">Cargar bloques desde JSON</button>
+                    <button id="exportQuizTopics" class="px-3 py-1 bg-gray-600 text-white rounded">Exportar bloques</button>
                 </div>
             </details>
         </section>
@@ -325,6 +328,11 @@
   Reemplaza con tu JSON grande importándolo.
 -------------------------- */
         let DB = {
+            quizTopics: [
+                { value: "endomembrana", label: "1) Endomembrana" },
+                { value: "estructuras", label: "2) Estructuras y Procesos" },
+                { value: "mito", label: "3) Mitocondrias y Metabolismo" }
+            ],
             questions: [{
                 id: "q1",
                 topic: "endomembrana",
@@ -442,6 +450,7 @@
   Utilidades y renderizado
 -------------------------- */
         function ensureDbShape() {
+            DB.quizTopics = Array.isArray(DB.quizTopics) ? DB.quizTopics : [];
             DB.questions = Array.isArray(DB.questions) ? DB.questions : [];
             DB.glossary = Array.isArray(DB.glossary) ? DB.glossary : [];
             DB.flashcards = Array.isArray(DB.flashcards) ? DB.flashcards : [];
@@ -681,7 +690,9 @@
         }
         function renderAll() {
             ensureDbShape();
+            renderQuizTopics();
             renderGloss(); renderFlashcards(); renderStructures(); renderCases(); renderInteratives(); renderMaps(); document.getElementById('questionsJSON').value = JSON.stringify(DB.questions || [], null, 2);
+            document.getElementById('quizTopicsJSON').value = JSON.stringify(DB.quizTopics || [], null, 2);
         }
         loadFromLocal();
 
@@ -836,6 +847,23 @@
         let filteredQuestions = DB.questions.slice();
         let qIndex = 0;
         let currentQuestion = null;
+        function renderQuizTopics() {
+            const select = document.getElementById('quizTopic');
+            if (!select) return;
+            select.innerHTML = '';
+            const allOption = document.createElement('option');
+            allOption.value = 'all';
+            allOption.textContent = 'Todos los bloques';
+            select.appendChild(allOption);
+            const topics = Array.isArray(DB.quizTopics) ? DB.quizTopics : [];
+            topics.forEach(topic => {
+                if (!topic || !topic.value) return;
+                const option = document.createElement('option');
+                option.value = topic.value;
+                option.textContent = topic.label || topic.value;
+                select.appendChild(option);
+            });
+        }
         function refreshFiltered(topic) {
             filteredQuestions = (topic && topic !== 'all') ? DB.questions.filter(q=> q.topic === topic): DB.questions.slice();
             qIndex = 0;
@@ -895,6 +923,25 @@
             } catch(e) {
                 alert('JSON inválido');
             }
+        });
+        document.getElementById('loadQuizTopics').addEventListener('click', ()=> {
+            try {
+                const arr = JSON.parse(document.getElementById('quizTopicsJSON').value);
+                if (Array.isArray(arr)) {
+                    DB.quizTopics = arr;
+                    renderQuizTopics();
+                    refreshFiltered(document.getElementById('quizTopic').value);
+                    saveToLocal();
+                    alert('Bloques del quiz cargados');
+                } else {
+                    alert('Formato inválido (se espera array).');
+                }
+            } catch(e) {
+                alert('JSON inválido');
+            }
+        });
+        document.getElementById('exportQuizTopics').addEventListener('click', ()=> {
+            document.getElementById('quizTopicsJSON').value = JSON.stringify(DB.quizTopics || [], null, 2);
         });
 
         /* Reset progress */
