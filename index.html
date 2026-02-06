@@ -311,6 +311,15 @@
     </div>
 
     <script>
+        function normalizeText(value) {
+            return String(value || '')
+                .normalize('NFD')
+                .replace(/[\u0300-\u036f]/g, '')
+                .toLowerCase()
+                .replace(/\s+/g, ' ')
+                .trim();
+        }
+
         /* --------------------------
   ESTRUCTURA DE DATOS (DB) - muestra mínima inicial para pruebas.
   Reemplaza con tu JSON grande importándolo.
@@ -439,22 +448,36 @@
         /* render glossary */
         function renderGloss() {
             const list = document.getElementById('glossList'); list.innerHTML = '';
-            DB.glossary.forEach((g, idx)=> {
-                const el = document.createElement('div'); el.className = 'mb-3 p-2 border rounded';
-                el.innerHTML = `<strong>${escapeHtml(g.term)}</strong><div class="text-sm text-gray-700 mt-1">${escapeHtml(g.def)}</div><div class="mt-1 text-xs text-gray-500">#${idx+1}</div>`;
-                list.appendChild(el);
+            const q = (document.getElementById('glossSearch').value || '').toLowerCase();
+            DB.glossary.filter(item=> item.term.toLowerCase().includes(q) || item.def.toLowerCase().includes(q)).forEach((item, idx)=> {
+                const div = document.createElement('div'); div.className = 'p-2 border-b';
+                div.innerHTML = `<strong>${escapeHtml(item.term)}</strong><p class="text-xs text-gray-700">${escapeHtml(item.def)}</p>
+                <button data-i="${idx}" class="text-blue-600 text-xs mt-1">Editar</button>`;
+                list.appendChild(div);
+            });
+            // edit handler
+            list.querySelectorAll('button').forEach(btn=> {
+                btn.addEventListener('click', ()=> {
+                    const i = parseInt(btn.dataset.i); document.getElementById('termInput').value = DB.glossary[i].term; document.getElementById('defInput').value = DB.glossary[i].def; DB.glossary.splice(i, 1); renderGloss(); saveToLocal();
+                });
             });
             document.getElementById('glossJSON').value = JSON.stringify(DB.glossary, null, 2);
         }
+
+        document.getElementById('glossSearch').addEventListener('input', renderGloss);
 
         /* render flashcards */
         function renderFlashcards() {
             const cont = document.getElementById('flashContainer'); cont.innerHTML = '';
             DB.flashcards.forEach((f, i)=> {
-                const card = document.createElement('div'); card.className = 'card'; card.style.width = '240px';
-                card.innerHTML = `<div class="card-inner" data-index="${i}"><div class="card-front">${escapeHtml(f.front)}</div><div class="card-back">${escapeHtml(f.back)}</div></div>`;
-                card.querySelector('.card-inner').addEventListener('click', e=> {
-                    const inner = e.currentTarget; inner.style.transform = inner.style.transform ? '': 'rotateY(180deg)';
+                const card = document.createElement('div'); card.className = 'card';
+                card.innerHTML = `<div class="card-inner">
+                    <div class="card-front">${escapeHtml(f.front)}</div>
+                    <div class="card-back">${escapeHtml(f.back)}</div>
+                </div>`;
+                card.addEventListener('click', ()=> {
+                    card.querySelector('.card-inner').style.transform =
+                        card.querySelector('.card-inner').style.transform === 'rotateY(180deg)' ? '' : 'rotateY(180deg)';
                 });
                 cont.appendChild(card);
             });
@@ -465,22 +488,26 @@
         function renderStructures() {
             const area = document.getElementById('structuresArea'); area.innerHTML = '';
             DB.structures.forEach((s, idx)=> {
-                const wrap = document.createElement('div'); wrap.className = 'p-3 border rounded';
-                wrap.innerHTML = `<div><h4 class="font-semibold">${idx+1}. ${escapeHtml(s.title)}</h4><div class="text-sm mt-1">Imagen: <a class="link-img" target="_blank" href="${s.img}">${s.img}</a></div><div class="mt-2" id="opts-${idx}"></div></div>`;
-                area.appendChild(wrap);
-                const optsDiv = wrap.querySelector(`#opts-${idx}`);
-                s.options.forEach((o, i)=> {
-                    const radio = document.createElement('label'); radio.className = 'mr-3 block'; radio.innerHTML = `<input type="radio" name="struct_${idx}" value="${i}"> ${escapeHtml(o)}`; optsDiv.appendChild(radio);
+                const div = document.createElement('div'); div.className = 'p-3 border rounded';
+                const link = `<span class="link-img" onclick="window.open('${s.img}','_blank')">Ver imagen</span>`;
+                div.innerHTML = `<h4 class="font-semibold">${idx+1}. ${escapeHtml(s.title)} (${link})</h4>`;
+                const opts = document.createElement('div'); opts.className = 'mt-2 space-y-1';
+                s.options.forEach((opt, i)=> {
+                    const label = document.createElement('label'); label.className = 'block';
+                    label.innerHTML = `<input type="radio" name="struct-${idx}" value="${i}"> ${escapeHtml(opt)}`;
+                    opts.appendChild(label);
                 });
-                const btn = document.createElement('button'); btn.className = 'mt-2 px-2 py-1 bg-amber-500 text-white rounded'; btn.textContent = 'Verificar';
+                const btn = document.createElement('button'); btn.textContent = 'Verificar'; btn.className = 'mt-2 px-2 py-1 bg-amber-500 text-white rounded';
+                const res = document.createElement('div'); res.className = 'text-sm mt-1';
                 btn.addEventListener('click', ()=> {
-                    const sel = wrap.querySelector(`input[name="struct_${idx}"]:checked`); if (!sel) {
-                        alert('Selecciona opción'); return;
-                    } if (parseInt(sel.value) === s.answer) {
-                        alert('✅ Correcto\n'+(s.explain || '')); score += 5; saveScore();
-                    } else alert('❌ Incorrecto\n'+(s.explain || ''));
+                    const sel = div.querySelector(`input[name="struct-${idx}"]:checked`);
+                    if (!sel) { res.textContent = 'Selecciona una opción.'; return; }
+                    if (parseInt(sel.value) === s.answer) {
+                        res.textContent = '✅ Correcto. '+(s.explain || '');
+                        score += 5; saveScore();
+                    } else res.textContent = '❌ Incorrecto. '+(s.explain || '');
                 });
-                wrap.appendChild(btn);
+                div.appendChild(opts); div.appendChild(btn); div.appendChild(res); area.appendChild(div);
             });
             document.getElementById('structuresJSON').value = JSON.stringify(DB.structures, null, 2);
         }
@@ -488,28 +515,25 @@
         /* render cases */
         function renderCases() {
             const area = document.getElementById('casesArea'); area.innerHTML = '';
-            DB.cases.forEach((c,
-                idx)=> {
+            DB.cases.forEach((c, idx)=> {
                 const wrap = document.createElement('div'); wrap.className = 'p-3 border rounded mb-3';
-                wrap.innerHTML = `<div><h4 class="font-semibold">Caso ${idx+1}</h4><p class="mt-1">${escapeHtml(c.text)}</p><div class="mt-2" id="caseOpts${idx}"></div></div>`;
-                area.appendChild(wrap);
-                const optsDiv = wrap.querySelector(`#caseOpts${idx}`);
-                c.options.forEach((o, i)=> {
-                    const label = document.createElement('label'); label.className = 'block'; label.innerHTML = `<input type="radio" name="case_${idx}" value="${i}"> ${escapeHtml(o)}`; optsDiv.appendChild(label);
+                wrap.innerHTML = `<h4 class="font-semibold">${idx+1}. ${escapeHtml(c.text)}</h4>`;
+                const opts = document.createElement('div'); opts.className = 'mt-2 space-y-1';
+                c.options.forEach((opt, i)=> {
+                    const label = document.createElement('label'); label.className = 'block';
+                    label.innerHTML = `<input type="radio" name="case-${idx}" value="${i}"> ${escapeHtml(opt)}`;
+                    opts.appendChild(label);
                 });
-                const btn = document.createElement('button'); btn.className = 'mt-2 px-2 py-1 bg-indigo-600 text-white rounded'; btn.textContent = 'Responder';
-                btn.addEventListener('click',
-                    ()=> {
-                        const sel = wrap.querySelector(`input[name="case_${idx}"]:checked`); if (!sel) {
-                            alert('Selecciona opción'); return;
-                        } if (parseInt(sel.value) === c.answer) {
-                            alert('✅ Correcto\n'+(c.feedback || '')); score += 8; saveScore(); localStorage.setItem('block1', 'Completado'); updateBlocks();
-                        } else {
-                            alert('❌ Incorrecto\n'+(c.feedback || ''));
-
-                        }
-                    });
-                wrap.appendChild(btn);
+                const btn = document.createElement('button'); btn.className = 'mt-2 px-2 py-1 bg-amber-500 text-white rounded'; btn.textContent = 'Verificar';
+                const res = document.createElement('div'); res.className = 'text-sm mt-1';
+                btn.addEventListener('click', ()=> {
+                    const sel = wrap.querySelector(`input[name="case-${idx}"]:checked`);
+                    if (!sel) { res.textContent = 'Selecciona una opción.'; return; }
+                    if (parseInt(sel.value) === c.answer) { res.textContent = '✅ Correcto. '+(c.feedback||''); score += 6; saveScore(); }
+                    else res.textContent = '❌ Incorrecto. '+(c.feedback||'');
+                });
+                wrap.appendChild(opts); wrap.appendChild(btn); wrap.appendChild(res);
+                area.appendChild(wrap);
             });
             document.getElementById('casesJSON').value = JSON.stringify(DB.cases, null, 2);
         }
@@ -532,7 +556,12 @@
                     });
                     const targetsDiv = document.createElement('div'); targetsDiv.className = 'mt-3 grid grid-cols-1 gap-2';
                     it.targets.forEach((tg, i)=> {
-                        const dz = document.createElement('div'); dz.className = 'dropzone'; dz.id = `target-${idx}-${i}`; dz.textContent = tg; dz.dataset.target = tg;
+                        const dz = document.createElement('div'); dz.className = 'dropzone'; dz.id = `target-${idx}-${i}`;
+                        dz.dataset.target = tg;
+                        const label = document.createElement('span');
+                        label.className = 'dropzone-label';
+                        label.textContent = tg;
+                        dz.appendChild(label);
                         dz.addEventListener('dragover', e => {
                             e.preventDefault(); e.dataTransfer.dropEffect = 'move'; dz.style.backgroundColor = '#f8fafc';
                         });
@@ -549,8 +578,8 @@
                             dz.appendChild(el);
                             // compute trimmed texts
                             const childText = el.textContent.trim();
-                            const expected = (it.answerMap && it.answerMap[childText]) ? it.answerMap[childText].trim(): null;
-                            const zoneText = dz.dataset.target ? dz.dataset.target.trim() : '';
+                            const expected = normalizeText((it.answerMap && it.answerMap[childText]) ? it.answerMap[childText]: '');
+                            const zoneText = normalizeText(dz.dataset.target || label.textContent || '');
                             if (expected && expected === zoneText) {
                                 dz.style.borderColor = '#16a34a'; dz.style.backgroundColor = '#ecfdf5'; dz.dataset.correct = 'true'; score += 3; saveScore();
                             } else {
@@ -571,8 +600,9 @@
                                     const rem = otherDz.querySelector('.draggable');
                                     if (rem) {
                                         const remText = rem.textContent.trim();
-                                        const remExp = (it.answerMap && it.answerMap[remText]) ? it.answerMap[remText].trim(): null;
-                                        const otherZoneText = otherDz.dataset.target ? otherDz.dataset.target.trim() : '';
+                                        const remExp = normalizeText((it.answerMap && it.answerMap[remText]) ? it.answerMap[remText]: '');
+                                        const otherLabel = otherDz.querySelector('.dropzone-label');
+                                        const otherZoneText = normalizeText(otherDz.dataset.target || (otherLabel ? otherLabel.textContent : ''));
                                         if (remExp && remExp === otherZoneText) {
                                             otherDz.style.borderColor = '#16a34a'; otherDz.style.backgroundColor = '#ecfdf5'; otherDz.dataset.correct = 'true';
                                         } else {
@@ -599,7 +629,260 @@
             });
             document.getElementById('interJSON').value = JSON.stringify(DB.interactives, null, 2);
         }
-@@ -854,26 +855,26 @@
+
+        /* render maps */
+        function renderMaps() {
+            const disp = document.getElementById('mapsDisplay'); disp.innerHTML = '';
+            Object.entries(DB.maps || {}).forEach(([k,
+                v])=> {
+                const div = document.createElement('div'); div.className = 'bg-gray-50 p-3 rounded';
+                div.innerHTML = `<h3 class="font-semibold capitalize">${escapeHtml(k)}</h3><pre class="map">${escapeHtml(v)}</pre>`;
+                disp.appendChild(div);
+            });
+            document.getElementById('mapsJSON').value = JSON.stringify(DB.maps || {}, null, 2);
+        }
+
+        /* Save/load DB to localStorage */
+        function saveToLocal() {
+            localStorage.setItem('DB_biocel', JSON.stringify(DB));
+        }
+        function loadFromLocal() {
+            const raw = localStorage.getItem('DB_biocel');
+            if (raw) {
+                try {
+                    DB = JSON.parse(raw);
+                } catch(e) {
+                    console.error(e);
+                }
+            }
+            renderAll();
+        }
+        function renderAll() {
+            renderGloss(); renderFlashcards(); renderStructures(); renderCases(); renderInteratives(); renderMaps(); document.getElementById('questionsJSON').value = JSON.stringify(DB.questions || [], null, 2);
+        }
+        loadFromLocal();
+
+        /* Score and dashboard */
+        let score = Number(localStorage.getItem('score') || 0);
+        document.getElementById('score').textContent = score;
+        function saveScore() {
+            localStorage.setItem('score', score); document.getElementById('score').textContent = score;
+        }
+        function updateBlocks() {
+            document.getElementById('p1').textContent = localStorage.getItem('block1') || 'Incompleto'; document.getElementById('p2').textContent = localStorage.getItem('block2') || 'Incompleto'; document.getElementById('p3').textContent = localStorage.getItem('block3') || 'Incompleto';
+        }
+        updateBlocks();
+
+        /* Navigation wiring */
+        const sections = document.querySelectorAll("section");
+        document.querySelectorAll(".btn").forEach(btn=> {
+            btn.classList.add("px-3", "py-1", "rounded", "bg-indigo-600", "text-white"); btn.addEventListener('click', ()=> {
+                sections.forEach(sec=>sec.classList.add('hidden-by-default')); document.getElementById(btn.dataset.target).classList.remove('hidden-by-default'); window.scrollTo({
+                    top: 0, behavior: 'smooth'
+                });
+            });
+        });
+
+        /* File import/export */
+        const fileInput = document.getElementById('fileInput');
+        document.querySelector('.btn-file').addEventListener('click', ()=> fileInput.click());
+        fileInput.addEventListener('change', handleFile, false);
+        document.getElementById('exportJSON').addEventListener('click', exportAll);
+
+        function handleFile(evt) {
+            const f = evt.target.files[0];
+            if (!f) return;
+            const reader = new FileReader();
+            reader.onload = e=> {
+                try {
+                    const obj = JSON.parse(e.target.result);
+                    // basic merge/replace: if keys present replace DB keys
+                    DB = Object.assign({}, DB, obj);
+                    renderAll();
+                    saveToLocal();
+                    alert('Contenido importado correctamente.');
+                } catch(err) {
+                    alert('Error leyendo JSON: ' + err.message);
+                }
+            };
+            reader.readAsText(f);
+        }
+        function exportAll() {
+            const dataStr = JSON.stringify(DB, null, 2);
+            const blob = new Blob([dataStr], {
+                type: "application/json"
+            });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a'); a.href = url; a.download = 'contenido_biologia_celular.json'; document.body.appendChild(a); a.click(); a.remove();
+            URL.revokeObjectURL(url);
+        }
+
+        /* CRUD simple for glosario, flashcards, etc. */
+        document.getElementById('addTerm').addEventListener('click', ()=> {
+            const t = document.getElementById('termInput').value.trim(); const d = document.getElementById('defInput').value.trim();
+            if (!t || !d) {
+                alert('Rellena término y definición'); return;
+            }
+            DB.glossary.unshift({
+                term: t, def: d
+            }); document.getElementById('termInput').value = ''; document.getElementById('defInput').value = ''; renderGloss(); saveToLocal();
+        });
+        document.getElementById('clearGloss').addEventListener('click', ()=> {
+            if (!confirm('Borrar todo el glosario?')) return; DB.glossary = []; renderGloss(); saveToLocal();
+        });
+        document.getElementById('importGloss').addEventListener('click', ()=> {
+            try {
+                const arr = JSON.parse(document.getElementById('glossJSON').value); if (Array.isArray(arr)) {
+                    DB.glossary = arr; renderGloss(); saveToLocal(); alert('Glosario importado');
+                } else alert('Formato inválido');
+            } catch(e) {
+                alert('JSON inválido');
+            }
+        });
+        document.getElementById('exportGloss').addEventListener('click', ()=> {
+            document.getElementById('glossJSON').value = JSON.stringify(DB.glossary, null, 2);
+        });
+
+        document.getElementById('loadFlash').addEventListener('click', ()=> {
+            try {
+                const arr = JSON.parse(document.getElementById('flashJSON').value); if (Array.isArray(arr)) {
+                    DB.flashcards = arr; renderFlashcards(); saveToLocal(); alert('Flashcards cargadas');
+                } else alert('Formato inválido');
+            } catch(e) {
+                alert('JSON inválido');
+            }
+        });
+        document.getElementById('exportFlash').addEventListener('click', ()=> {
+            document.getElementById('flashJSON').value = JSON.stringify(DB.flashcards, null, 2);
+        });
+
+        document.getElementById('loadStructures').addEventListener('click', ()=> {
+            try {
+                const arr = JSON.parse(document.getElementById('structuresJSON').value); if (Array.isArray(arr)) {
+                    DB.structures = arr; renderStructures(); saveToLocal(); alert('Estructuras cargadas');
+                } else alert('Formato inválido');
+            } catch(e) {
+                alert('JSON inválido');
+            }
+        });
+        document.getElementById('exportStructures').addEventListener('click', ()=> {
+            document.getElementById('structuresJSON').value = JSON.stringify(DB.structures, null, 2);
+        });
+
+        document.getElementById('loadCases').addEventListener('click', ()=> {
+            try {
+                const arr = JSON.parse(document.getElementById('casesJSON').value); if (Array.isArray(arr)) {
+                    DB.cases = arr; renderCases(); saveToLocal(); alert('Casos cargados');
+                } else alert('Formato inválido');
+            } catch(e) {
+                alert('JSON inválido');
+            }
+        });
+        document.getElementById('exportCases').addEventListener('click', ()=> {
+            document.getElementById('casesJSON').value = JSON.stringify(DB.cases, null, 2);
+        });
+
+        document.getElementById('loadInter').addEventListener('click', ()=> {
+            try {
+                const arr = JSON.parse(document.getElementById('interJSON').value); if (Array.isArray(arr)) {
+                    DB.interactives = arr; renderInteratives(); saveToLocal(); alert('Interactivos cargados');
+                } else alert('Formato inválido');
+            } catch(e) {
+                alert('JSON inválido');
+            }
+        });
+        document.getElementById('exportInter').addEventListener('click', ()=> {
+            document.getElementById('interJSON').value = JSON.stringify(DB.interactives, null, 2);
+        });
+
+        document.getElementById('loadMaps').addEventListener('click', ()=> {
+            try {
+                const obj = JSON.parse(document.getElementById('mapsJSON').value); if (typeof obj === 'object') {
+                    DB.maps = obj; renderMaps(); saveToLocal(); alert('Mapas cargados');
+                } else alert('Formato inválido');
+            } catch(e) {
+                alert('JSON inválido');
+            }
+        });
+        document.getElementById('exportMaps').addEventListener('click', ()=> {
+            document.getElementById('mapsJSON').value = JSON.stringify(DB.maps || {}, null, 2);
+        });
+
+        /* Quiz: sequential behavior */
+        let filteredQuestions = DB.questions.slice();
+        let qIndex = 0;
+        function refreshFiltered(topic) {
+            filteredQuestions = (topic && topic !== 'all') ? DB.questions.filter(q=> q.topic === topic): DB.questions.slice();
+            qIndex = 0;
+            document.getElementById('qTotal').textContent = filteredQuestions.length;
+            renderCurrentQuestion();
+        }
+        function renderCurrentQuestion() {
+            if (filteredQuestions.length === 0) {
+                document.getElementById('qText').textContent = 'No hay preguntas en este tema.'; document.getElementById('qOptions').innerHTML = ''; document.getElementById('qNumber').textContent = '0'; return;
+            }
+            if (qIndex < 0) qIndex = 0;
+            if (qIndex >= filteredQuestions.length) qIndex = filteredQuestions.length -1;
+            const q = filteredQuestions[qIndex];
+            document.getElementById('qText').textContent = q.text;
+            const opts = document.getElementById('qOptions'); opts.innerHTML = '';
+            q.options.forEach((o, i)=> {
+                const label = document.createElement('label'); label.className = 'block'; label.innerHTML = `<input type="radio" name="qopt" value="${i}"> ${escapeHtml(o)}`; opts.appendChild(label);
+            });
+            document.getElementById('qNumber').textContent = (qIndex+1);
+            document.getElementById('qTotal').textContent = filteredQuestions.length;
+            currentQuestion = q;
+        }
+        document.getElementById('quizTopic').addEventListener('change', ()=> {
+            refreshFiltered(document.getElementById('quizTopic').value);
+        });
+        document.getElementById('nextQ').addEventListener('click', ()=> {
+            if (filteredQuestions.length === 0) {
+                alert('No hay preguntas.'); return;
+            } if (qIndex < filteredQuestions.length-1) qIndex++; renderCurrentQuestion();
+        });
+        document.getElementById('prevQ').addEventListener('click', ()=> {
+            if (filteredQuestions.length === 0) {
+                alert('No hay preguntas.'); return;
+            } if (qIndex > 0) qIndex--; renderCurrentQuestion();
+        });
+        document.getElementById('checkA').addEventListener('click', ()=> {
+            const sel = document.querySelector('input[name="qopt"]:checked'); const res = document.getElementById('qResult'); if (!currentQuestion) {
+                res.textContent = 'No hay pregunta seleccionada.'; return;
+            } if (!sel) {
+                res.textContent = 'Selecciona una opción.'; return;
+            } if (parseInt(sel.value) === currentQuestion.answer) {
+                res.textContent = '✅ Correcto. ' + (currentQuestion.explain || ''); score += 10; saveScore();
+            } else res.textContent = '❌ Incorrecto. ' + (currentQuestion.explain || '');
+        });
+
+        document.getElementById('showAll').addEventListener('click', ()=> {
+            document.getElementById('questionsJSON').value = JSON.stringify(DB.questions, null, 2);
+        });
+
+        /* Load questions JSON editor */
+        document.getElementById('loadQuestions').addEventListener('click', ()=> {
+            try {
+                const arr = JSON.parse(document.getElementById('questionsJSON').value); if (Array.isArray(arr)) {
+                    DB.questions = arr; refreshFiltered(document.getElementById('quizTopic').value); renderAll(); saveToLocal(); alert('Preguntas cargadas');
+                } else alert('Formato inválido (se espera array).');
+            } catch(e) {
+                alert('JSON inválido');
+            }
+        });
+
+        /* Reset progress */
+        document.getElementById('reset').addEventListener('click', ()=> {
+            if (!confirm('Reiniciar todo el progreso?')) return; localStorage.clear(); score = 0; document.getElementById('score').textContent = 0; updateBlocks(); loadFromLocal(); location.reload();
+        });
+
+        /* initial render and quiz setup */
+        renderAll();
+        refreshFiltered('all');
+
+/* =====================
+   HOME JSON (SOLO INICIO)
+   ===================== */
 
 document.getElementById("loadHomeJSON").addEventListener("click", () => {
     try {
